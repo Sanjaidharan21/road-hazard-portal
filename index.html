@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Road Hazard Reporting Portal</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f1f5f9;
+            color: #1e293b;
+        }
+        header {
+            background: #17365d;
+            color: white;
+            padding: 24px 6%;
+        }
+        header h1 { margin: 0 0 8px; }
+        header p { margin: 0; }
+        main { max-width: 1100px; margin: 28px auto; padding: 0 18px; }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 16px;
+        }
+        .stat, .panel {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px #0000000d;
+        }
+        .stat strong { display: block; font-size: 28px; color: #17365d; }
+        .panel { margin-top: 22px; }
+        .complaints {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 16px;
+        }
+        .complaint {
+            border: 1px solid #dbe3ed;
+            padding: 16px;
+            border-radius: 8px;
+            background: #fff;
+        }
+        .complaint h3 { margin-top: 0; }
+        .status {
+            display: inline-block;
+            padding: 5px 9px;
+            border-radius: 20px;
+            background: #dbeafe;
+            color: #1d4ed8;
+            font-size: 12px;
+        }
+        .filters { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
+        select, input, button {
+            padding: 10px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+        }
+        button { background: #17365d; color: white; cursor: pointer; }
+        footer { text-align: center; padding: 24px; color: #64748b; }
+    </style>
+</head>
+<body>
+<header>
+    <h1>Road Hazard Reporting Portal</h1>
+    <p>Report road hazards. Track complaints. Build safer streets.</p>
+</header>
+
+<main>
+    <section class="stats">
+        <div class="stat"><strong id="total">5</strong>Total Complaints</div>
+        <div class="stat"><strong id="pending">3</strong>Pending</div>
+        <div class="stat"><strong id="resolved">2</strong>Resolved</div>
+    </section>
+
+    <section class="panel">
+        <h2>Reported Road Hazards</h2>
+        <div class="complaints" id="complaintList"></div>
+    </section>
+</main>
+
+<footer>Municipal Corporation | Road Safety Reporting Portal</footer>
+
+<script>
+const complaints = [
+    {id: 1, type: "Pothole", location: "Anna Salai, Ward 4", date: "2026-10-18", status: "Pending"},
+    {id: 2, type: "Damaged Streetlight", location: "Gandhi Road, Ward 2", date: "2026-10-17", status: "In Progress"},
+    {id: 3, type: "Waterlogging", location: "Market Street, Ward 7", date: "2026-10-16", status: "Pending"},
+    {id: 4, type: "Pothole", location: "Temple Road, Ward 3", date: "2026-10-15", status: "Resolved"},
+    {id: 5, type: "Damaged Streetlight", location: "Park Avenue, Ward 1", date: "2026-10-14", status: "Resolved"}
+];
+
+function displayComplaints(items) {
+    const list = document.getElementById("complaintList");
+    list.innerHTML = "";
+
+    items.forEach(item => {
+        list.innerHTML += `
+            <article class="complaint">
+                <h3>${item.type}</h3>
+                <p><b>Complaint ID:</b> ${item.id}</p>
+                <p><b>Location:</b> ${item.location}</p>
+                <p><b>Report Date:</b> ${item.date}</p>
+                <span class="status">${item.status}</span>
+            </article>`;
+    });
+}
+
+function updateSummary() {
+    document.getElementById("total").textContent = complaints.length;
+    document.getElementById("pending").textContent =
+        complaints.filter(c => c.status !== "Resolved").length;
+    document.getElementById("resolved").textContent =
+        complaints.filter(c => c.status === "Resolved").length;
+}
+
+displayComplaints(complaints);
+updateSummary();
+</script>
+</body>
+</html>
