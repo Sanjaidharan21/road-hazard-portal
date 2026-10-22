@@ -6,7 +6,7 @@ pipeline {
         choice(
             name: 'ACTION',
             choices: ['BUILD_ONLY', 'DEPLOY'],
-            description: 'BUILD_ONLY tests the image; DEPLOY publishes and deploys it'
+            description: 'BUILD_ONLY builds and tests; DEPLOY also publishes and deploys'
         )
     }
 
@@ -15,7 +15,9 @@ pipeline {
         IMAGE_TAG = 'v1'
         DEPLOYMENT_NAME = 'road-hazard-portal'
         CONTAINER_NAME = 'road-hazard-portal'
-        SERVICE_NAME = 'road-hazard-service'
+
+        DOCKER_CLI = 'C:\\Users\\Sanjay\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker.exe'
+        KUBECTL_CLI = 'C:\\Users\\Sanjay\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\kubectl.exe'
     }
 
     stages {
@@ -49,18 +51,25 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                bat 'docker build -t %IMAGE_NAME%:%IMAGE_TAG% .'
+                bat '"%DOCKER_CLI%" build -t %IMAGE_NAME%:%IMAGE_TAG% .'
             }
         }
 
         stage('Local Container Test') {
             steps {
                 bat '''
-                    docker rm -f road-hazard-ci-test 2>NUL
-                    docker run -d --name road-hazard-ci-test -p 18085:80 %IMAGE_NAME%:%IMAGE_TAG%
-                    curl.exe --fail http://localhost:18085
+                    "%DOCKER_CLI%" rm -f road-hazard-ci-test 2>NUL
+                    "%DOCKER_CLI%" run -d --name road-hazard-ci-test -p 18085:80 %IMAGE_NAME%:%IMAGE_TAG%
                     if errorlevel 1 exit /b 1
-                    docker rm -f road-hazard-ci-test
+
+                    timeout /t 3 /nobreak >NUL
+                    curl.exe --fail http://localhost:18085
+                    if errorlevel 1 (
+                        "%DOCKER_CLI%" logs road-hazard-ci-test
+                        exit /b 1
+                    )
+
+                    "%DOCKER_CLI%" rm -f road-hazard-ci-test
                 '''
             }
         }
@@ -70,17 +79,24 @@ pipeline {
                 expression { params.ACTION == 'DEPLOY' }
             }
             steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'dockerhub-creds',
-                    usernameVariable: 'DOCKER_USER',
-                    passwordVariable: 'DOCKER_TOKEN'
-                )]) {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'dockerhub-creds',
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_TOKEN'
+                    )
+                ]) {
                     bat '''
-                        echo %DOCKER_TOKEN% | docker login -u %DOCKER_USER% --password-stdin
+                        echo %DOCKER_TOKEN% | "%DOCKER_CLI%" login -u %DOCKER_USER% --password-stdin
                         if errorlevel 1 exit /b 1
-                        docker push %IMAGE_NAME%:%IMAGE_TAG%
-                        if errorlevel 1 exit /b 1
-                        docker logout
+
+                        "%DOCKER_CLI%" push %IMAGE_NAME%:%IMAGE_TAG%
+                        if errorlevel 1 (
+                            "%DOCKER_CLI%" logout
+                            exit /b 1
+                        )
+
+                        "%DOCKER_CLI%" logout
                     '''
                 }
             }
@@ -91,16 +107,37 @@ pipeline {
                 expression { params.ACTION == 'DEPLOY' }
             }
             steps {
-                withCredentials([file(
-                    credentialsId: 'kubeconfig-file',
-                    variable: 'KUBECONFIG'
-                )]) {
-                    bat '''
-                        kubectl --kubeconfig="%KUBECONFIG%" set image deployment/%DEPLOYMENT_NAME% %CONTAINER_NAME%=%IMAGE_NAME%:%IMAGE_TAG%
-                        if errorlevel 1 exit /b 1
-                        kubectl --kubeconfig="%KUBECONFIG%" rollout status deployment/%DEPLOYMENT_NAME% --timeout=120s
-                        if errorlevel 1 exit /b 1
-                    '''
+                script {
+                    withCredentials([
+                        file(
+                            credentialsId: 'kubeconfig-file',
+                            variable: 'KUBECONFIG'
+                        )
+                    ]) {
+                        try {
+                            bat '''
+                                "%KUBECTL_CLI%" --kubeconfig="%KUBECONFIG%" set image deployment/%DEPLOYMENT_NAME% %CONTAINER_NAME%=%IMAGE_NAME%:%IMAGE_TAG%
+                                if errorlevel 1 exit /b 1
+
+                                "%KUBECTL_CLI%" --kubeconfig="%KUBECONFIG%" rollout status deployment/%DEPLOYMENT_NAME% --timeout=120s
+                                if errorlevel 1 exit /b 1
+                            '''
+                        } catch (err) {
+                            echo 'Deployment failed. Attempting automatic rollback.'
+
+                            bat(
+                                returnStatus: true,
+                                script: '"%KUBECTL_CLI%" --kubeconfig="%KUBECONFIG%" rollout undo deployment/%DEPLOYMENT_NAME%'
+                            )
+
+                            bat(
+                                returnStatus: true,
+                                script: '"%KUBECTL_CLI%" --kubeconfig="%KUBECONFIG%" rollout status deployment/%DEPLOYMENT_NAME% --timeout=120s'
+                            )
+
+                            throw err
+                        }
+                    }
                 }
             }
         }
@@ -108,13 +145,15 @@ pipeline {
 
     post {
         always {
-            bat 'docker rm -f road-hazard-ci-test 2>NUL & exit /b 0'
+            bat '"%DOCKER_CLI%" rm -f road-hazard-ci-test 2>NUL & exit /b 0'
         }
+
         success {
             echo 'Road Hazard Portal pipeline completed successfully.'
         }
+
         failure {
-            echo 'Pipeline failed. Check Console Output for the failing stage.'
+            echo 'Pipeline failed. Check Console Output for the failing stage and rollback result.'
         }
     }
 }
